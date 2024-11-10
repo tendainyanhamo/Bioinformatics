@@ -1,0 +1,170 @@
+---
+title: "TCGA Sarcoma's Survival Analysis - CDK11"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Sarcoma's Survival Analysis
+
+```{r}
+# load my libraries
+library(TCGAbiolinks)
+library(survminer)
+library(survival)
+library(SummarizedExperiment)
+library(tidyverse)
+library(DESeq2)
+library(pander)
+```
+
+```{r}
+clin_sarc <- GDCquery_clinic('TCGA-SARC')
+which(colnames(clin_sarc) %in% c('vital_status', 'days_to_last_follow_up', 'days_to_death'))
+clin_sarc[,c(10,33,38)]
+```
+
+```{r}
+table(clin_sarc$vital_status)
+```
+
+```{r}
+clin_sarc$deceased <- ifelse(clin_sarc$vital_status == 'Alive', FALSE, TRUE)
+
+```
+
+```{r}
+clin_sarc$overall_survival <- ifelse(clin_sarc$vital_status == 'Alive', clin_sarc$days_to_last_follow_up, clin_sarc$days_to_death)
+```
+
+```{r}
+query_sarc <- GDCquery(
+  project = 'TCGA-SARC',
+  data.category = 'Transcriptome Profiling',
+  experimental.strategy = 'RNA-Seq',
+  workflow.type = 'STAR - Counts',
+  sample.type = c('Primary Tumor', 'Solid Tissue Normal'),
+  data.type = 'Gene Expression Quantification',
+  access = 'open'
+  )
+
+output_sarc <- getResults(query_sarc)
+
+```
+
+```{r}
+#tumor_sarc <- output_sarc[output_sarc$sample_type == 'Primary Tumor', 'cases'][1:200]
+#tumor_sarc
+```
+
+```{r}
+query_sarc <- GDCquery(
+  project = 'TCGA-SARC',
+  data.category = 'Transcriptome Profiling',
+  experimental.strategy = 'RNA-Seq',
+  workflow.type = 'STAR - Counts',
+  sample.type = c('Primary Tumor', 'Solid Tissue Normal'),
+  data.type = 'Gene Expression Quantification',
+  access = 'open'
+  #barcode = tumor
+  )
+```
+
+```{r}
+# download my data
+GDCdownload(query_sarc)
+```
+
+```{r}
+# get counts
+tcga_sarc_data <- GDCprepare(query_sarc, summarizedExperiment = TRUE)
+sarc_matrix <- assay(tcga_sarc_data, 'unstranded')
+sarc_matrix[1:10, 1:10]
+```
+
+```{r}
+# extract raw data and store in matrix
+gene_metadata <- as.data.frame(rowData(tcga_sarc_data))
+coldata <- as.data.frame(colData(tcga_sarc_data))
+```
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = sarc_matrix,
+                              colData = coldata,
+                              design = ~ 1)
+
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+vsd <- vst(dds, blind=FALSE)
+sarc_matrix_vst <- assay(vsd)
+sarc_matrix_vst[1:10, 1:10]
+# vst means variance stabilized transformed counts
+```
+
+```{r}
+# Get data for CDK11B only
+sarc_cdk11 <- sarc_matrix_vst %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'gene_id') %>%
+  gather(key = 'case_id', value = 'counts', -gene_id) %>%
+  left_join(., gene_metadata, by = 'gene_id') %>%
+  filter(gene_name == c('CDK11B', 'CDK11A'))
+  
+```
+
+```{r}
+# divide patients into low expression and high expression groups - I will be using the median value but you can use percentiles as well.  
+
+median_value_sarc <- median(sarc_cdk11$counts)
+
+sarc_cdk11$strata <- ifelse(sarc_cdk11$counts >= median_value_sarc, 'HIGH', 'LOW')
+```
+
+```{r}
+# Add all the information into one data frame
+# remove additional characters in the case_id so that it matches with the submitter_id in the other data sets
+
+sarc_cdk11$case_id <- gsub('-01.*', '', sarc_cdk11$case_id)
+sarc_cdk11 <- merge(sarc_cdk11, clin_brca, by.x = 'case_id', by.y = 'submitter_id')
+```
+
+```{r}
+# Survival Curve
+fit <- survfit(Surv(overall_survival, deceased) ~ strata, data = sarc_cdk11)
+pander(fit)
+```
+
+```{r}
+# Plot the survival curve
+ggsurvplot(fit,
+           data = sarc_cdk11,
+           pval = T,
+           risk.table = T)
+
+
+```
+
+The p-value of 0.035 indicated on the KM survival curve indicates that there is a statistically significant difference in survival between the groups of patients with high expression of CDK11 and those with low expression.In this plot, it seems that the "HIGH"(high expression of CDK11) group has a lower survival probability compared to the "LOW"(low expression of CDK11) group.
+
+
+## Log Rank Test
+I am going to perform a log rank test below. 
+Null Hypothesis - there is no difference in survival between the 2 patient groups
+Alternative Hypothesis - there is a difference in survival between the 2 patient groups
+P-value = 0.05
+
+Our p-value is 0.035172 so we reject the null hypothesis. This infers that there is, indeed, a difference in survival rates between the 2 groups of patients. 
+
+```{r}
+# Use the survdiff function to compare between the 2 groups
+
+fit2 <- survdiff(Surv(overall_survival, deceased) ~ strata, data = sarc_cdk11)
+pander(fit2)
+```
+
+
+

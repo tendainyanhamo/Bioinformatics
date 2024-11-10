@@ -1,0 +1,83 @@
+---
+title: "CDK11B Expression"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## CDK11B Expression Counts From the CCLE Database
+
+```{r, message=FALSE, warning=FALSE}
+# Load all libraries
+
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(heatmaply)
+library(manhattanly)
+library(gapminder)
+library(pander)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Read in my CCLE data
+
+ccle_data <- read.csv("CDK11B_cell_line_counts.csv")
+```
+
+```{r message=FALSE, warning=FALSE}
+# Remove all 'na' values from my dataset so that I get accurate graphs
+
+cdk11b_expression <- ccle_data[!is.na(ccle_data$rnaseq_rpkm),]
+#View(cdk11b_expression) # I can check if the dataset has all 'na' values removed from it
+```
+
+```{r message=FALSE, warning=FALSE}
+ggplot(cdk11b_expression, aes(x=factor(cell_line), y=rnaseq_rpkm)) + geom_boxplot(fill='skyblue', color='black') +
+  labs(title='CDK11B Expression Counts', x='Cell Lines', y='CDK11B RPKM')
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=TRUE}
+# Show me the top 20 (or however many cell lines I want to see) cell lines with the highest RNA expression counts for CDK11B
+top_cell_lines <- cdk11b_expression %>%
+  arrange(desc(rnaseq_rpkm)) %>%
+  slice(1:20)
+
+pander(top_cell_lines)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Make a graph using only these top 20 cell lines
+
+p <- ggplot(top_cell_lines, aes(x=factor(cell_line), y=rnaseq_rpkm)) + geom_boxplot(fill='skyblue', color='black') +
+  labs(title='CDK11B Expression Counts', x='Cell Lines', y='CDK11B RPKM')
+
+ggplotly(p)
+```
+
+```{r message=FALSE, warning=FALSE}
+# Heatmap
+
+#set.seed(123)
+cdk11b_expression <- data.frame(
+  rnaseq_rpkm = rnorm(1000),
+  cell_line = sample(1:5, 1000, replace=TRUE)
+)
+
+heatmap <- ggplot(cdk11b_expression, aes(x= rnaseq_rpkm, y = cell_line)) + 
+  geom_tile(aes(fill = rnaseq_rpkm)) + 
+  scale_fill_gradient(low = 'skyblue', high = 'navyblue') +
+  labs(x='CDK11B RPKM Counts', y='Cell Lines', title='CDK11B Expression Heatmap')
+
+ggplotly(heatmap)
+```
+
+```{r}
+# Assuming your dataset is named "my_data" and you want to select columns "Column1" and "Column2"
+my_table <- select(top_cell_lines, cell_line, rnaseq_rpkm)
+pander(my_table)
+```
+

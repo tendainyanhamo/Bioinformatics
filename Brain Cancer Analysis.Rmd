@@ -1,0 +1,162 @@
+---
+title: "Lower Grade Ganglia Cancers"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Lower Grade Ganglia Brain Cancers
+
+```{r}
+# load my libraries
+library(TCGAbiolinks)
+library(survminer)
+library(survival)
+library(SummarizedExperiment)
+library(tidyverse)
+library(DESeq2)
+library(pander)
+```
+
+```{r}
+clin_lg <- GDCquery_clinic('TCGA-LGG')
+which(colnames(clin_lg) %in% c('vital_status', 'days_to_last_follow_up', 'days_to_death'))
+clin_lg[,c(10,34,40)]
+```
+
+```{r}
+table(clin_lg$vital_status)
+```
+
+```{r}
+clin_lg$deceased <- ifelse(clin_lg$vital_status == 'Alive', FALSE, TRUE)
+
+```
+
+```{r}
+clin_lg$overall_survival <- ifelse(clin_lg$vital_status == 'Alive', clin_lg$days_to_last_follow_up, clin_lg$days_to_death)
+```
+
+```{r}
+query_lg <- GDCquery(
+  project = 'TCGA-LGG',
+  data.category = 'Transcriptome Profiling',
+  experimental.strategy = 'RNA-Seq',
+  workflow.type = 'STAR - Counts',
+  sample.type = 'Primary Tumor',
+  data.type = 'Gene Expression Quantification',
+  access = 'open'
+  )
+
+output_lg <- getResults(query_lg)
+
+```
+
+```{r}
+#tumor_lg <- output_lg[output_lg$sample_type == 'Primary Tumor', 'cases'][1:50]
+#tumor_lg
+```
+
+```{r}
+query_lg <- GDCquery(
+  project = 'TCGA-LGG',
+  data.category = 'Transcriptome Profiling',
+  experimental.strategy = 'RNA-Seq',
+  workflow.type = 'STAR - Counts',
+  sample.type = 'Primary Tumor',
+  data.type = 'Gene Expression Quantification',
+  access = 'open'
+  #barcode = tumor
+  )
+```
+
+```{r}
+# download my data
+GDCdownload(query_lg)
+```
+
+```{r}
+# get counts
+tcga_lg_data <- GDCprepare(query_lg, summarizedExperiment = TRUE)
+lg_matrix <- assay(tcga_lg_data, 'unstranded')
+lg_matrix[1:10, 1:10]
+```
+
+```{r}
+# extract raw data and store in matrix
+gene_metadata_lg <- as.data.frame(rowData(tcga_lg_data))
+coldata_lg <- as.data.frame(colData(tcga_lg_data))
+```
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = lg_matrix,
+                              colData = coldata_lg,
+                              design = ~ 1)
+
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+lsd <- vst(dds, blind=FALSE)
+lg_matrix_vst <- assay(lsd)
+lg_matrix_vst[1:10, 1:10]
+# vst means variance stabilized transformed counts
+```
+
+```{r}
+# Get data for CDK11B only
+lg_cdk11 <- lg_matrix_vst %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'gene_id') %>%
+  gather(key = 'case_id', value = 'counts', -gene_id) %>%
+  left_join(., gene_metadata_lg, by = 'gene_id') %>%
+  filter(gene_name == 'CDK11B')
+  
+```
+
+```{r}
+# divide patients into low expression and high expression groups - I will be using the median value but you can use percentiles as well.  
+
+median_value <- median(lg_cdk11$counts)
+
+lg_cdk11$strata <- ifelse(lg_cdk11$counts >= median_value, 'HIGH', 'LOW')
+```
+
+```{r}
+# Add all the information into one data frame
+# remove additional characters in the case_id so that it matches with the submitter_id in the other data sets
+
+lg_cdk11$case_id <- gsub('-01.*', '', lg_cdk11$case_id)
+lg_cdk11 <- merge(lg_cdk11, clin_lg, by.x = 'case_id', by.y = 'submitter_id')
+```
+
+```{r}
+# Survival Curve
+fit <- survfit(Surv(overall_survival, deceased) ~ strata, data = lg_cdk11)
+pander(fit)
+```
+
+```{r}
+# Plot the survival curve
+ggsurvplot(fit,
+           data = lg_cdk11,
+           pval = T,
+           risk.table = T)
+
+
+```
+
+## Log Rank Test
+That p-value of 0.57 indicated that there is no statistically significant difference. between the 2 groups of patients. This is contrary to what has been published about CDK11 and ovarian cancer. We are supposed to see a difference in survival between the 2 groups. I assume there are 2 factors affecting these results. One of them is that CDK11 is significantly expressed more in recurrent tumors or metastatic tumors and we only have 8 patient records of recurrent tumors. Running an analysis on
+
+```{r}
+# Use the survdiff function to compare between the 2 groups
+
+fit2 <- survdiff(Surv(overall_survival, deceased) ~ strata, data = ov_cdk11)
+pander(fit2)
+```
+
+
+

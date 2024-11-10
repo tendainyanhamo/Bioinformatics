@@ -1,0 +1,166 @@
+---
+title: "TCGA Sarcomas"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## TCGA Sarcomas Differential Gene Expression Analysis
+
+```{r}
+library(TCGAbiolinks)
+library(survminer)
+library(survival)
+library(SummarizedExperiment)
+library(tidyverse)
+library(DESeq2)
+library(pander)
+library(EnhancedVolcano)
+library(pheatmap)
+library(plotly)
+library(ggplot2)
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+library(EnsDb.Hsapiens.v86)
+
+```
+
+```{r}
+query_sarc1 <- GDCquery(
+  project = 'TCGA-SARC',
+  data.category = 'Transcriptome Profiling',
+  experimental.strategy = 'RNA-Seq',
+  workflow.type = 'STAR - Counts',
+  sample.type = 'Primary Tumor',
+  data.type = 'Gene Expression Quantification',
+  access = 'open'
+  )
+
+output_sarc1 <- getResults(query_sarc1)
+```
+
+```{r}
+# download the data from TCGA
+GDCdownload(query_sarc1)
+```
+
+```{r}
+# get counts
+tcga_sarc_data <- GDCprepare(query_sarc, summarizedExperiment = TRUE)
+sarc_matrix <- assay(tcga_sarc_data, 'unstranded')
+sarc_matrix[1:10, 1:10]
+```
+
+```{r}
+# extract raw data and store in matrix
+gene_metadata_sarc <- as.data.frame(rowData(tcga_sarc_data))
+coldata_sarc <- as.data.frame(colData(tcga_sarc_data))
+```
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = sarc_matrix,
+                              colData = coldata_sarc,
+                              design = ~ 1)
+dds <- DESeq(dds)
+normalized_counts <- counts(dds, normalized=TRUE)
+```
+
+```{r}
+# Perform DGE using DESeq2
+res <- results(dds)
+```
+
+```{r}
+# Convert results to data frame
+res_df <- as.data.frame(res)
+
+res_df$gene <- rownames(res_df)
+
+res_df$gene_symbol <- mapIds(EnsDb.Hsapiens.v86,
+                             keys = res_df$gene,
+                             column = 'SYMBOL',
+                             keytype = 'GENEID',
+                             multiVals = 'first')
+
+#length(which(is.na(annotations_edb$SYMBOL) == FALSE))
+```
+
+```{r}
+# Replace NA values in gene_symbol column with original gene names
+res_df$gene_symbol[is.na(res_df$gene_symbol)] <- res_df$gene[is.na(res_df$gene_symbol)]
+
+```
+
+```{r}
+# Filter significant genes
+sig_genes <- rownames(res_df)[which(res_df$padj < 0.05 & abs(res_df$log2FoldChange) > 1.5)]
+
+# Add a column to indicate if the gene is of interest
+res_df$highlight <- ifelse(res_df$gene %in% sig_genes, "yes", "no")
+
+# Create the ggplot2 plot
+plot <- ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj), text = gene_symbol)) +
+  geom_point(aes(color = highlight), size = 1) +
+  scale_color_manual(values = c("yes" = "red", "no" = "black")) +
+  theme_minimal() +
+  labs(title = "Volcano Plot",
+       x = "Log2 Fold Change",
+       y = "-Log10 Adjusted P-value")
+
+# Convert to interactive plotly plot
+interactive_plot <- ggplotly(plot, tooltip = "text")
+
+# Display the interactive plot
+interactive_plot
+
+```
+
+
+
+``{r}
+# Extract significantly differentially expressed genes
+sig_genes <- res[which(res$padj < 0.05), ]
+
+# Visualization
+# MA Plot
+plotMA(res, main="DESeq2", ylim=c(-2,2))
+
+# Volcano Plot
+genes_of_interest <- c('CDK2', 'CDK4', 'CDK9', 'CDK11A', 'CDK11B', 'CDK12')
+
+p <- EnhancedVolcano(res,
+                lab = ifelse(rownames(res) %in% genes_of_interest, rownames(res), ''),
+                x = 'log2FoldChange',
+                y = 'padj',
+                pCutoff = 0.05,
+                FCcutoff = 1.5,
+                title = 'Volcano Plot',
+                subtitle = 'Differential Gene Expression in TARGET-OS',
+                caption = 'Log2 fold change vs. -Log10 adjusted p-value',
+                pointSize = 3.0,
+                labSize = 4.0,
+                legendLabSize = 14,
+                legendIconSize = 5.0,
+                drawConnectors = TRUE,
+                widthConnectors = 0.5,
+                colConnectors = 'black',
+                colAlpha = 1,
+                gridlines.major = FALSE,
+                gridlines.minor = FALSE,
+                max.overlaps = 100)
+
+
+# Heatmap
+top_genes <- head(rownames(sig_genes), 20)
+pheatmap(normalized_counts[top_genes, ])
+
+```
+
+```{r}
+interactive_plot <- ggplotly(p)
+interactive_plot
+```
+

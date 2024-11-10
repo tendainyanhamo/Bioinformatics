@@ -1,0 +1,122 @@
+---
+title: "Mean CDK11B Counts"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(TCGAbiolinks)
+library(survminer)
+library(survival)
+library(SummarizedExperiment)
+library(tidyverse)
+library(DESeq2)
+library(pander)
+```
+
+# Osteosarcoma
+
+```{r}
+os_cdk11 <- os_matrix_vst %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'gene_id') %>%
+  gather(key = 'case_id', value = 'counts', -gene_id) %>%
+  left_join(., gene_metadata_os, by = 'gene_id') %>%
+  filter(gene_name == 'CDK11B')
+
+os_cdk11
+```
+
+# Ovarian Cancer
+
+```{r}
+ov_cdk11 <- ov_matrix_vst %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'gene_id') %>%
+  gather(key = 'case_id', value = 'counts', -gene_id) %>%
+  left_join(., gene_metadata_ov, by = 'gene_id') %>%
+  filter(gene_name == 'CDK11B')
+
+ov_cdk11
+```
+
+# Breast Cancer
+
+```{r}
+brca_cdk11 <- brca_matrix_vst %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'gene_id') %>%
+  gather(key = 'case_id', value = 'counts', -gene_id) %>%
+  left_join(., gene_metadata, by = 'gene_id') %>%
+  filter(gene_name == 'CDK11B')
+
+brca_cdk11
+```
+
+# Sarcomas
+
+```{r}
+sarc_cdk11 <- sarc_matrix_vst %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'gene_id') %>%
+  gather(key = 'case_id', value = 'counts', -gene_id) %>%
+  left_join(., gene_metadata, by = 'gene_id') %>%
+  filter(gene_name == 'CDK11B')
+
+sarc_cdk11
+```
+
+# Lung Cancer (Adenocarcinoma)
+
+```{r}
+lu_cdk11 <- lu_matrix_vst %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'gene_id') %>%
+  gather(key = 'case_id', value = 'counts', -gene_id) %>%
+  left_join(., gene_metadata_lu, by = 'gene_id') %>%
+  filter(gene_name == 'CDK11B')
+
+lu_cdk11
+```
+
+# Brain Cancer (Ganglia)
+
+```{r}
+lg_cdk11 <- lg_matrix_vst %>%
+  as.data.frame() %>%
+  rownames_to_column(var = 'gene_id') %>%
+  gather(key = 'case_id', value = 'counts', -gene_id) %>%
+  left_join(., gene_metadata_lg, by = 'gene_id') %>%
+  filter(gene_name == 'CDK11B')
+
+lg_cdk11
+```
+
+
+# Average Expression Counts of CDK11B
+
+```{r}
+# Osteosarcoma
+summarise(os_cdk11, osteosarcoma_mean = mean(counts))
+
+# Ovarian Cancer
+summarise(ov_cdk11, ovarian_mean = mean(counts))
+
+# Breast Cancer
+summarise(brca_cdk11, breast_mean = mean(counts))
+
+# Sarcomas
+summarise(sarc_cdk11, sarcomas_mean = mean(counts))
+
+# Lung Adenocarcinoma
+summarise(lu_cdk11, lung_mean = mean(counts))
+
+# Ganglia
+summarise(lg_cdk11, brain_mean = mean(counts))
+
+```
+
